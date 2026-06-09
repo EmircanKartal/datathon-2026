@@ -12,6 +12,7 @@ paths:
   artifacts: "outputs/artifacts"
   plots: "outputs/plots"
   predictions: "outputs/predictions"
+  mlflow_uri: "mlruns"
 
 data:
   train_file: "data/raw/train.csv"
@@ -22,51 +23,86 @@ data:
 
 nlp:
   text_col: "mentor_feedback_text"
-  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
-  max_length: 512
+  # Best multilingual model for Turkish evaluative prose
+  embedding_model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+  svd_components: 48
+  cache_train: "outputs/artifacts/embeddings_train.pkl"
+  cache_test: "outputs/artifacts/embeddings_test.pkl"
 
 cross_validation:
   n_splits: 5
   shuffle: true
   random_state: 42
 
+# All imputed using fold-train median (inside CV loop)
+impute_with_zero:
+  - "github_avg_stars"
+  - "open_source_contribution_count"
+
+impute_with_median:
+  - "internship_duration_months"
+  - "hr_interview_score"
+  - "linkedin_profile_score"
+  - "portfolio_score"
+  - "english_exam_score"
+
 models:
   lgbm:
-    n_estimators: 2000
-    learning_rate: 0.05
+    n_estimators: 3000
+    learning_rate: 0.02
     num_leaves: 127
-    feature_fraction: 0.8
+    feature_fraction: 0.7
     bagging_fraction: 0.8
     bagging_freq: 5
     reg_alpha: 0.1
     reg_lambda: 0.1
+    min_child_samples: 20
     random_state: 42
     n_jobs: -1
     verbose: -1
 
   xgb:
-    n_estimators: 2000
-    learning_rate: 0.05
+    n_estimators: 3000
+    learning_rate: 0.02
     max_depth: 6
     subsample: 0.8
-    colsample_bytree: 0.8
+    colsample_bytree: 0.7
     reg_alpha: 0.1
     reg_lambda: 1.0
+    min_child_weight: 5
     random_state: 42
     n_jobs: -1
     tree_method: "hist"
 
   catboost:
-    iterations: 2000
-    learning_rate: 0.05
+    iterations: 3000
+    learning_rate: 0.02
     depth: 6
     l2_leaf_reg: 3.0
     random_seed: 42
     verbose: 0
+    early_stopping_rounds: 100
+
+  extra_trees:
+    n_estimators: 1000
+    max_features: 0.7
+    min_samples_leaf: 5
+    random_state: 42
+    n_jobs: -1
+
+  # tabpfn uses tabpfn-client cloud API — no GPU needed
+  # Token set via TABPFN_TOKEN in .env
+  tabpfn:
+    # thinking_effort used only for final test predictions, not CV folds
+    thinking_effort_final: "medium"
 
 ensemble:
-  method: "weighted_average"
-  weights:
-    lgbm: 0.4
-    xgb: 0.3
-    catboost: 0.3
+  # Ridge meta-learner trained on 5-column OOF stack
+  ridge_alphas: [0.1, 1.0, 10.0]
+  # fallback weighted average if stacking underperforms
+  fallback_weights:
+    lgbm: 0.30
+    xgb: 0.25
+    catboost: 0.25
+    extra_trees: 0.10
+    tabpfn: 0.10

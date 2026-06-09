@@ -7,8 +7,8 @@ alwaysApply: false
 # NLP Feature Extraction Patterns
 
 ## Preferred Embedding Model
-`sentence-transformers/all-MiniLM-L6-v2` — fast, 384-dim, good general performance.
-For higher quality at cost: `BAAI/bge-large-en-v1.5`.
+`sentence-transformers/paraphrase-multilingual-mpnet-base-v2` — 768-dim, Turkish-capable.
+mentor_feedback_text is in Turkish — never use English-only models.
 
 ## Always Cache Embeddings
 ```python
@@ -20,8 +20,8 @@ embeddings = get_sentence_embeddings(
 Never re-encode the same texts twice in the same session.
 
 ## Dimensionality Reduction
-Reduce 384-dim embeddings to 32–64 dims with TruncatedSVD before feeding to tree models.
-Tree models do not benefit from high-dimensional sparse embeddings.
+Reduce 768-dim embeddings to 48 dims with TruncatedSVD using `fold_svd_reduce()`.
+SVD must be fit INSIDE each CV fold on the train split only — never on the full dataset.
 
 ## Text Preprocessing
 - Fill NaN with empty string `""` before encoding, not `"unknown"`.
