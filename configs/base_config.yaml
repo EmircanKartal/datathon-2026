@@ -1,0 +1,72 @@
+project:
+  name: "datathon-2026"
+  competition: "BTK Akademi Datathon 2026"
+  metric: "mse"
+  target: "career_success_score"
+
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  data_features: "data/features"
+  submissions: "data/submissions"
+  artifacts: "outputs/artifacts"
+  plots: "outputs/plots"
+  predictions: "outputs/predictions"
+
+data:
+  train_file: "data/raw/train.csv"
+  test_file: "data/raw/test_x.csv"
+  sample_submission: "data/raw/sample_submission.csv"
+  id_col: "student_id"
+  target_col: "career_success_score"
+
+nlp:
+  text_col: "mentor_feedback_text"
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  max_length: 512
+
+cross_validation:
+  n_splits: 5
+  shuffle: true
+  random_state: 42
+
+models:
+  lgbm:
+    n_estimators: 2000
+    learning_rate: 0.05
+    num_leaves: 127
+    feature_fraction: 0.8
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    random_state: 42
+    n_jobs: -1
+    verbose: -1
+
+  xgb:
+    n_estimators: 2000
+    learning_rate: 0.05
+    max_depth: 6
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    random_state: 42
+    n_jobs: -1
+    tree_method: "hist"
+
+  catboost:
+    iterations: 2000
+    learning_rate: 0.05
+    depth: 6
+    l2_leaf_reg: 3.0
+    random_seed: 42
+    verbose: 0
+
+ensemble:
+  method: "weighted_average"
+  weights:
+    lgbm: 0.4
+    xgb: 0.3
+    catboost: 0.3

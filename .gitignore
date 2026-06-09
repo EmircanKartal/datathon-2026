@@ -1,0 +1,32 @@
+# Data — never commit raw competition data
+data/raw/
+data/processed/
+data/features/
+
+# Outputs
+outputs/artifacts/
+outputs/plots/
+
+# Submissions — commit selectively
+# data/submissions/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# MLflow
+mlruns/
+
+# Kaggle credentials & secrets
+~/.kaggle/
+.env

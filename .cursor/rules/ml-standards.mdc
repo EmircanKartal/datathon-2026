@@ -1,0 +1,35 @@
+---
+description: ML coding standards and patterns for this competition
+globs: src/**/*.py, scripts/**/*.py, notebooks/**/*.ipynb
+alwaysApply: false
+---
+
+# ML Coding Standards
+
+## Data Leakage Prevention
+- Always fit preprocessing (scalers, encoders, imputers) on **train only**, then transform test.
+- Never use target variable statistics from the full dataset — use only train fold inside CV.
+- NLP embeddings: fit any dimensionality reduction on train embeddings only.
+
+## Feature Engineering
+- New features go in `src/features/engineering.py`.
+- Document the intuition in a comment above the feature group.
+- Use vectorized pandas/numpy operations — no row-wise Python loops on DataFrames.
+
+## Model Training
+- Use `src/validation/cross_val.py:cross_validate_model()` — do not write ad-hoc loops.
+- Save all trained fold models with `src/utils/io.py:save_artifact()`.
+- Always `np.clip(predictions, 0, 100)` before saving a submission.
+
+## Configuration
+- All hyperparameters live in `configs/base_config.yaml`. Never hardcode values in scripts.
+- Load config with `src/utils/config.py:load_config()`.
+
+## Reproducibility
+- Set `random_state=42` everywhere a random seed is accepted.
+- Log CV scores to stdout at minimum; use MLflow for tracked experiments.
+
+## Naming
+- OOF arrays: `oof_{model_name}` (e.g. `oof_lgbm`)
+- Test prediction arrays: `test_{model_name}` (e.g. `test_lgbm`)
+- Submission files: `data/submissions/submission_{description}_{mse:.4f}.csv`

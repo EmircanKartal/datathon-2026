@@ -1,0 +1,36 @@
+---
+description: NLP patterns for mentor_feedback_text feature extraction
+globs: src/nlp/**/*.py, notebooks/**/*.ipynb
+alwaysApply: false
+---
+
+# NLP Feature Extraction Patterns
+
+## Preferred Embedding Model
+`sentence-transformers/all-MiniLM-L6-v2` — fast, 384-dim, good general performance.
+For higher quality at cost: `BAAI/bge-large-en-v1.5`.
+
+## Always Cache Embeddings
+```python
+embeddings = get_sentence_embeddings(
+    texts,
+    cache_path="outputs/artifacts/embeddings_train.pkl"
+)
+```
+Never re-encode the same texts twice in the same session.
+
+## Dimensionality Reduction
+Reduce 384-dim embeddings to 32–64 dims with TruncatedSVD before feeding to tree models.
+Tree models do not benefit from high-dimensional sparse embeddings.
+
+## Text Preprocessing
+- Fill NaN with empty string `""` before encoding, not `"unknown"`.
+- Do not apply traditional NLP preprocessing (stemming, stopwords) to transformer inputs.
+
+## Integration with Tabular Pipeline
+Concatenate reduced embedding columns to the main feature DataFrame:
+```python
+emb_df = embedding_to_dataframe(reduced_embeddings, prefix="emb")
+X = pd.concat([X.reset_index(drop=True), emb_df], axis=1)
+```
+Ensure index alignment between train/test before concatenation.

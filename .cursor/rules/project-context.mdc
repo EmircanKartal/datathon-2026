@@ -1,0 +1,33 @@
+---
+description: Core project context for BTK Akademi Datathon 2026
+alwaysApply: true
+---
+
+# BTK Akademi Datathon 2026
+
+## Task
+Regression — predict `career_success_score` (0–100, continuous) for students.
+Metric: **MSE** (lower is better). Competition ends June 14, 2026 23:59.
+
+## Key Files
+- `data/raw/train.csv` — training data with target
+- `data/raw/test.csv` — test data (no target)
+- `data/raw/sample_submission.csv` — submission format
+- `configs/base_config.yaml` — all hyperparameters and paths
+- `src/features/engineering.py` — feature pipeline
+- `src/nlp/text_features.py` — sentence-transformer embeddings
+- `src/validation/cross_val.py` — 5-fold CV loop
+- `src/models/ensemble.py` — ensembling utilities
+
+## Target Variable
+`career_success_score` — float, 0–100. Clip all predictions to [0, 100].
+
+## Critical NLP Column
+`mentor_feedback_text` — must be embedded via sentence-transformers, not dropped.
+Cache embeddings to `outputs/artifacts/embeddings_*.pkl` to avoid recomputation.
+
+## Validation Strategy
+Always use 5-fold KFold CV. Report both MSE and RMSE. Never evaluate on the full training set without CV.
+
+## Submission Constraint
+Max 5 submissions/day. Always verify submission format matches `sample_submission.csv`.

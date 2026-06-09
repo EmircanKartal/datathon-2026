@@ -1,0 +1,39 @@
+---
+description: Pre-submission checklist to run before every Kaggle submission
+alwaysApply: false
+---
+
+# Pre-Submission Checklist
+
+Before saving and submitting any prediction file, verify all of the following:
+
+## Format
+- [ ] Columns are exactly: `student_id`, `career_success_score`
+- [ ] Row count matches `test.csv` exactly
+- [ ] No NaN or Inf values in predictions
+- [ ] Predictions are clipped to [0, 100]
+
+## Validation
+- [ ] CV MSE has been printed and recorded
+- [ ] OOF predictions match expected distribution (roughly 0–100)
+- [ ] No features computed from the full train+test set (leakage check)
+
+## File Naming
+- Save as: `data/submissions/submission_{tag}_{cv_mse:.4f}.csv`
+- Example: `data/submissions/submission_lgbm_xgb_ensemble_12.3456.csv`
+
+## Kaggle Limits
+- Daily limit: **5 submissions**. Use them deliberately.
+- Track every submission in a comment or experiment log.
+
+## Code to validate:
+```python
+import pandas as pd
+import numpy as np
+
+sub = pd.read_csv("data/submissions/submission.csv")
+assert list(sub.columns) == ["student_id", "career_success_score"]
+assert not sub["career_success_score"].isna().any()
+assert sub["career_success_score"].between(0, 100).all()
+print(f"Submission valid. Shape: {sub.shape}. Score range: [{sub['career_success_score'].min():.2f}, {sub['career_success_score'].max():.2f}]")
+```
