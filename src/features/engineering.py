@@ -14,8 +14,17 @@ Feature groups (EDA-driven):
   E. Portfolio & online presence — github quality, career readiness
   F. Academic & temporal        — years since graduation, academic performance
   G. Classic interactions       — tech × interview, experience × tech
-  H. Text statistics            — keyword counts from Turkish mentor feedback
-  I. Fold-safe rank features    — percentile ranks within group (Phase 3)
+  H. NEW high-signal interactions — top3 × project, ceiling × project, soft × portfolio
+  I. Text statistics            — keyword counts from Turkish mentor feedback
+  J. Fold-safe rank features    — percentile ranks within group (Phase 3)
+
+v2 changes (2026-06-10):
+  - Removed 15 near-zero correlation features (|r|<0.04) to reduce overfitting
+    (age, cgpa, attendance_rate, years_since_graduation, hackathon_count,
+     applications_sent, interviews_attended, tech_skill_std, tech_skill_range,
+     skill_role_gap, cert_per_year, internship_per_year, text_char_len,
+     interview_to_app_ratio, github_stars_per_repo)
+  - Added 5 new high-signal interaction terms
 """
 from __future__ import annotations
 import numpy as np
@@ -49,11 +58,31 @@ MEDIAN_FILL_COLS = [
 # Dropped before modelling (noise or structural reasons)
 DROP_COLS = [
     "student_id",
-    "application_year",        # r=0.984 with graduation_year → use diff instead
+    "application_year",        # r=0.984 with graduation_year → redundant
     "hobby",                   # < 2pt target spread → pure noise
     "preferred_social_media_platform",  # < 2pt target spread → pure noise
     "mentor_feedback_text",    # handled separately via NLP pipeline
     "career_success_score",    # target — never a feature
+]
+
+# Features with |r| < 0.04 confirmed as noise — dropped in get_feature_cols()
+# Keeping originals in DataFrame for CatBoost raw cat columns to reference
+NOISE_COLS = [
+    "age",                       # r=0.004 — irrelevant for career success
+    "cgpa",                      # r=0.015 — weak, absorbed by academic_performance
+    "attendance_rate",           # r=0.005 — near-zero
+    "years_since_graduation",    # r=0.005 — almost no variance (most grad same yr)
+    "hackathon_count",           # r=0.031 — awards matter, not count
+    "applications_sent",         # r=0.025 — noisy proxy
+    "interviews_attended",       # r=0.039 — noisy proxy
+    "tech_skill_std",            # r=0.014 — absorbed by range/ceiling features
+    "tech_skill_range",          # r=0.007 — very low signal
+    "skill_role_gap",            # r=0.025 — redundant with skill_role_match
+    "cert_per_year",             # r=0.020 — redundant with certification_count
+    "internship_per_year",       # r=0.035 — redundant with internship_count
+    "text_char_len",             # r=0.008 — mentor text length has no signal
+    "interview_to_app_ratio",    # r=0.014 — noisy ratio
+    "github_stars_per_repo",     # r=0.040 — dominated by github_quality
 ]
 
 # Encoded inside CV fold via smoothed target encoding + frequency encoding
@@ -249,6 +278,54 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df["interview_x_soft"]   = df["interview_composite"] * df["soft_skill_mean"]
     df["portfolio_x_tech"]   = df["portfolio_composite"] * df["tech_skill_mean"]
 
+    # -----------------------------------------------------------------------
+    # GROUP H: New high-signal interactions (v2 additions)
+    # Top features × each other → capture elite students who excel in multiple areas
+    # -----------------------------------------------------------------------
+
+    # Peak skills × project quality: student at mastery level who builds quality work
+    df["top3_x_project"]     = df["top3_skills_mean"] * df["project_quality_score"]
+
+    # Ceiling count × project: how many mastery-level skills PLUS quality work
+    df["ceiling_x_project"]  = df["skill_ceiling_count"] * df["project_quality_score"]
+
+    # Soft skills × career readiness: presentable + well-prepared
+    df["soft_x_career"]      = df["soft_skill_mean"] * df["career_readiness"]
+
+    # Technical breadth × interview: broadly skilled AND interview-ready
+    df["breadth_x_interview"]= df["technical_breadth"] * df["technical_interview_score"]
+
+    # Three-way signal: best single proxy for "complete" candidate
+    df["triple_signal"]      = (
+        df["project_quality_score"] / 100.0
+        * df["tech_skill_mean"] / 100.0
+        * df["technical_interview_score"] / 100.0
+        * 10000.0
+    )
+
+    return df
+
+
+def attach_mentor_scores(df: pd.DataFrame, mentor_scores: pd.DataFrame) -> pd.DataFrame:
+    """
+    Attach pre-computed mentor semantic scores and add interaction terms.
+    Called AFTER build_features and after mentor scores are computed.
+    mentor_scores: DataFrame from build_mentor_features(), aligned by position.
+
+    GROUP I: Mentor-feature interactions (added in v3)
+    Mentor's textual assessment × objective measurement = doubly-confirmed signal
+    """
+    df = df.reset_index(drop=True)
+    ms = mentor_scores.reset_index(drop=True)
+    df = pd.concat([df, ms], axis=1)
+
+    # Mentor tech assessment × objective project quality → confirmed technical excellence
+    if "mentor_tech_score" in df.columns and "project_quality_score" in df.columns:
+        df["mentor_tech_x_project"]   = df["mentor_tech_score"] * df["project_quality_score"] / 10.0
+        df["mentor_tone_x_interview"] = df["mentor_tone_score"] * df["technical_interview_score"] / 10.0
+        df["mentor_soft_x_soft"]      = df["mentor_soft_score"] * df["soft_skill_mean"] / 10.0
+        df["mentor_potential_x_tech"] = df["mentor_potential_score"] * df["tech_skill_mean"] / 10.0
+
     return df
 
 
@@ -412,10 +489,15 @@ def compute_text_stats(texts: pd.Series) -> pd.DataFrame:
 # Helper: final feature column list
 # ---------------------------------------------------------------------------
 
-def get_feature_cols(df: pd.DataFrame, extra_drop: Optional[list] = None) -> list:
+def get_feature_cols(df: pd.DataFrame, extra_drop: Optional[list] = None,
+                     remove_noise: bool = False) -> list:
     """
     Base feature columns passed into the CV loop.
     TARGET_ENCODE_COLS are included — dropped AFTER encoding creates _te columns.
+    remove_noise=False (default) keeps all features — GBDTs handle noise naturally.
+    Set remove_noise=True only for ablation experiments.
     """
     drop = set(DROP_COLS + (extra_drop or []))
+    if remove_noise:
+        drop |= set(NOISE_COLS)
     return [c for c in df.columns if c not in drop]

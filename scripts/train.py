@@ -38,13 +38,14 @@ from src.utils.config import load_config
 from src.utils.io import load_data, save_submission, save_artifact
 from src.utils.metrics import print_score
 from src.features.engineering import (
-    build_features, impute_fold, build_rank_features_fold,
+    build_features, attach_mentor_scores, impute_fold, build_rank_features_fold,
     compute_text_stats, TARGET_ENCODE_COLS, DROP_COLS, get_feature_cols,
 )
 from src.features.target_encoding import smoothed_target_encode, frequency_encode
 from src.nlp.text_features import (
     get_sentence_embeddings, fold_svd_reduce, embedding_to_dataframe,
 )
+from src.nlp.feedback_scores import build_mentor_features
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +99,19 @@ def main(args):
     train_text_stats = compute_text_stats(train_raw[text_col])
     test_text_stats  = compute_text_stats(test_raw[text_col])
 
+    # --- Mentor LLM-style semantic scores (4 dimensions + 6 keyword features) ---
+    print("Computing mentor feedback semantic scores (tech/soft/potential/tone)...")
+    train_mentor = build_mentor_features(
+        train_raw[text_col], train_emb,
+        model_name=cfg["nlp"]["embedding_model"],
+        ref_cache_dir=cfg["paths"]["artifacts"],
+    )
+    test_mentor = build_mentor_features(
+        test_raw[text_col], test_emb,
+        model_name=cfg["nlp"]["embedding_model"],
+        ref_cache_dir=cfg["paths"]["artifacts"],
+    )
+
     # --- Feature engineering (no imputation yet) ---
     print("Building base features...")
     train_fe = build_features(train_raw)
@@ -112,6 +126,10 @@ def main(args):
         [test_fe.reset_index(drop=True), test_text_stats.reset_index(drop=True)],
         axis=1,
     )
+
+    # Attach mentor semantic scores + derived interaction terms
+    train_fe = attach_mentor_scores(train_fe, train_mentor)
+    test_fe  = attach_mentor_scores(test_fe,  test_mentor)
 
     # Base feature columns (before target encoding adds _te columns)
     base_feat_cols = get_feature_cols(train_fe)
@@ -330,8 +348,28 @@ def main(args):
     print_score(y, oof_stacked, "Stacked OOF")
     print(f"  Ridge alpha={best_alpha}, weights: {dict(zip(active_models, ridge_final.coef_.round(4)))}")
 
+    # --- Linear calibration on OOF (fixes both bias and scale) ---
+    # Fits y ≈ a * oof_pred + b using OOF predictions vs actuals.
+    # Same transform applied to test. This corrects prediction shrinkage
+    # (model pulls predictions toward mean; calibration stretches them back).
+    from sklearn.linear_model import LinearRegression as _LinReg
+    cal = _LinReg().fit(oof_stacked.reshape(-1, 1), y)
+    a, b = float(cal.coef_[0]), float(cal.intercept_)
+
+    final_preds_calibrated = a * final_preds + b
+    final_preds_calibrated = np.clip(final_preds_calibrated, 0, 100)
+
+    oof_cal = a * oof_stacked + b
+    oof_cal_mse = _mse(y, oof_cal)
+    variance_ratio = a  # scaling factor (>1 = was shrinking, calibration stretches)
+
+    print(f"\n  Calibration: a={a:.4f}  b={b:.4f}")
+    print(f"  OOF MSE after calibration: {oof_cal_mse:.4f} (pre-cal: {_mse(y, oof_stacked):.4f})")
+    print(f"  Test pred std before: {final_preds.std():.3f} → after: {final_preds_calibrated.std():.3f}")
+    print(f"  Target std: {y.std():.3f}")
+
     # --- Final predictions ---
-    final_preds = np.clip(final_preds, 0, 100)
+    final_preds = final_preds_calibrated
 
     tag = args.tag
     sub_mse = _mse(y, oof_stacked)
@@ -346,6 +384,9 @@ def main(args):
     with mlflow.start_run(run_name=f"final_{tag}"):
         mlflow.log_metric("oof_mse", sub_mse)
         mlflow.log_metric("oof_rmse", np.sqrt(sub_mse))
+        mlflow.log_metric("cal_a", a)
+        mlflow.log_metric("cal_b", b)
+        mlflow.log_metric("oof_calibrated_mse", oof_cal_mse)
         mlflow.log_param("tag", tag)
         mlflow.log_param("ridge_alpha", best_alpha)
         mlflow.log_artifact(sub_path)

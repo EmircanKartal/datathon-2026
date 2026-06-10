@@ -1,0 +1,77 @@
+---
+description: After every training run, Optuna trial, or submission, update the experiment log
+globs:
+  - "scripts/train.py"
+  - "scripts/tune.py"
+  - "scripts/kaggle_api.py"
+  - "configs/base_config.yaml"
+  - "docs/experiments/experiment_log.md"
+alwaysApply: true
+---
+
+# Experiment Logging Rule
+
+## WHEN TO UPDATE
+
+Update `docs/experiments/experiment_log.md` after **any** of these events:
+
+1. `scripts/train.py` completes → new OOF MSE result
+2. `scripts/tune.py` completes → new best hyperparameters
+3. Kaggle LB score received → public/private leaderboard entry
+4. `configs/base_config.yaml` model params changed
+5. `src/features/engineering.py` new features added
+
+## HOW TO UPDATE
+
+### After a training run (train.py):
+
+Add a row to the **"Experiment Sonuçları"** table:
+
+```markdown
+| N | `tag_name` | YYYY-MM-DD | seed | OOF MSE | OOF RMSE | LGBM | XGB | CAT | ET | alpha | notes |
+```
+
+- Copy OOF values from the terminal output
+- Note what changed vs previous run (params, features, seed)
+- If MSE improved, mark it **bold**
+- Update the "Submission Dosyaları" table with the new CSV filename
+
+### After Optuna (tune.py):
+
+Add a new block under **"Optuna Tuning Geçmişi"**:
+
+```markdown
+### Run N — YYYY-MM-DD
+Trials: X  |  Folds: Y  |  Best MSE: Z  |  Duration: ~N dk
+Best params: { ... }
+```
+
+Then update `configs/base_config.yaml` with the best params.
+
+### After Kaggle submission:
+
+Fill in the **"Kaggle Leaderboard Takibi"** table:
+
+```markdown
+| YYYY-MM-DD | submission_file.csv | public_LB_score | — | notes |
+```
+
+Compare OOF MSE vs Public LB to detect overfitting (if LB >> OOF, overfit to CV).
+
+### After adding new features:
+
+Update the **"Feature Engineering — Mevcut Gruplar"** table with the new group and count.
+
+## WHAT NOT TO DO
+
+- Do NOT remove old experiment rows — history is valuable
+- Do NOT update the log if a run failed with an error
+- Do NOT round MSE values (keep 4 decimal places for comparison)
+
+## ITERATION DECISION RULE
+
+After each experiment, update the **"Denenmedi ve Sonuçları"** table and recommend the next highest-impact experiment from the "Denenmesi Gereken" checklist based on:
+
+1. **Biggest expected MSE drop** (model tuning > feature engineering > ensembling)
+2. **Time cost** (fast wins first — seed averaging before full retraining)
+3. **Competition deadline** (if < 24h left, prioritize submission diversity over new experiments)
