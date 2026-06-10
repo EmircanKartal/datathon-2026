@@ -3,13 +3,19 @@ Full training pipeline — BTK Datathon 2026.
 
 5 base models (LGB, XGB, CatBoost, ExtraTrees, TabPFN) trained in a
 leakage-free 5-fold CV loop. Ridge meta-learner stacks OOF predictions.
-All preprocessing (imputation, target encoding, SVD) is fit inside each fold.
+All preprocessing (imputation, target encoding, SVD, rank features) fit inside fold.
 
 Usage:
     python scripts/train.py
-    python scripts/train.py --no-tabpfn   # skip TabPFN (saves API credits)
-    python scripts/train.py --tag v1       # custom submission tag
+    python scripts/train.py --no-tabpfn          # skip TabPFN (saves API credits)
+    python scripts/train.py --tag v1 --seed 42   # custom tag + reproducible seed
 """
+import os
+# Must be set before any transformers/sentence_transformers import to prevent TF hanging
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_TORCH", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import argparse
 import sys
 import numpy as np
@@ -32,8 +38,8 @@ from src.utils.config import load_config
 from src.utils.io import load_data, save_submission, save_artifact
 from src.utils.metrics import print_score
 from src.features.engineering import (
-    build_features, impute_fold, compute_text_stats,
-    TARGET_ENCODE_COLS, DROP_COLS, get_feature_cols,
+    build_features, impute_fold, build_rank_features_fold,
+    compute_text_stats, TARGET_ENCODE_COLS, DROP_COLS, get_feature_cols,
 )
 from src.features.target_encoding import smoothed_target_encode, frequency_encode
 from src.nlp.text_features import (
@@ -111,10 +117,11 @@ def main(args):
     base_feat_cols = get_feature_cols(train_fe)
 
     n_splits     = cfg["cross_validation"]["n_splits"]
-    random_state = cfg["cross_validation"]["random_state"]
+    random_state = args.seed if args.seed is not None else cfg["cross_validation"]["random_state"]
     svd_n        = cfg["nlp"]["svd_components"]
 
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    print(f"Seed: {random_state}  |  Folds: {n_splits}")
 
     oof = {m: np.zeros(len(train_fe)) for m in ["lgbm", "xgb", "catboost", "extra_trees", "tabpfn"]}
     test_preds = {m: np.zeros(len(test_fe)) for m in oof}
@@ -137,6 +144,11 @@ def main(args):
             X_tr_raw[base_feat_cols],
             X_val_raw[base_feat_cols],
             test_fe[base_feat_cols],
+        )
+
+        # 1b. Fold-safe percentile rank features (fit on X_tr only)
+        X_tr_imp, X_val_imp, X_test_imp = build_rank_features_fold(
+            X_tr_imp, X_val_imp, X_test_imp
         )
 
         # 2. Smoothed target encoding for department + target_role
@@ -172,6 +184,7 @@ def main(args):
         with mlflow.start_run(run_name=f"lgbm_fold{fold}", nested=True):
             from lightgbm import LGBMRegressor, early_stopping, log_evaluation
             lgbm_params = {k: v for k, v in cfg["models"]["lgbm"].items()}
+            lgbm_params["random_state"] = random_state
             lgbm = LGBMRegressor(**lgbm_params)
             lgbm.fit(
                 X_tr_final, y_tr.values,
@@ -192,6 +205,7 @@ def main(args):
         with mlflow.start_run(run_name=f"xgb_fold{fold}", nested=True):
             from xgboost import XGBRegressor
             xgb_params = {k: v for k, v in cfg["models"]["xgb"].items()}
+            xgb_params["seed"] = random_state
             xgb = XGBRegressor(
                 **xgb_params,
                 early_stopping_rounds=100,
@@ -215,6 +229,7 @@ def main(args):
         with mlflow.start_run(run_name=f"cat_fold{fold}", nested=True):
             from catboost import CatBoostRegressor, Pool
             cb_params = {k: v for k, v in cfg["models"]["catboost"].items()}
+            cb_params["random_seed"] = random_state
 
             # CatBoost gets tabular with raw categoricals + embeddings
             cat_cols_present = [c for c in TARGET_ENCODE_COLS if c in X_tr_enc.columns]
@@ -250,6 +265,7 @@ def main(args):
         with mlflow.start_run(run_name=f"et_fold{fold}", nested=True):
             from sklearn.ensemble import ExtraTreesRegressor
             et_params = {k: v for k, v in cfg["models"]["extra_trees"].items()}
+            et_params["random_state"] = random_state
             et = ExtraTreesRegressor(**et_params)
             et.fit(X_tr_final, y_tr.values)
             val_pred = et.predict(X_val_final)
@@ -343,4 +359,6 @@ if __name__ == "__main__":
     parser.add_argument("--no-tabpfn", action="store_true",
                         help="Skip TabPFN to save API credits during development")
     parser.add_argument("--tag", default="ensemble", help="Submission tag for filename")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed (overrides config value)")
     main(parser.parse_args())

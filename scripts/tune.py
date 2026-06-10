@@ -6,6 +6,11 @@ Usage:
     python scripts/tune.py
     python scripts/tune.py --n-trials 100 --n-folds 3
 """
+import os
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("USE_TORCH", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import argparse
 import sys
 import numpy as np
@@ -26,8 +31,8 @@ from lightgbm import LGBMRegressor, early_stopping, log_evaluation
 from src.utils.config import load_config
 from src.utils.io import load_data
 from src.features.engineering import (
-    build_features, impute_fold, compute_text_stats,
-    TARGET_ENCODE_COLS, get_feature_cols,
+    build_features, impute_fold, build_rank_features_fold,
+    compute_text_stats, TARGET_ENCODE_COLS, get_feature_cols,
 )
 from src.features.target_encoding import smoothed_target_encode, frequency_encode
 from src.nlp.text_features import get_sentence_embeddings, fold_svd_reduce, embedding_to_dataframe
@@ -66,6 +71,7 @@ def make_objective(X_full, y, train_emb, cfg, n_folds):
             X_tr_imp, X_val_imp = impute_fold(
                 X_tr_raw[base_cols], X_val_raw[base_cols]
             )
+            X_tr_imp, X_val_imp = build_rank_features_fold(X_tr_imp, X_val_imp)
             X_tr_enc, X_val_enc = smoothed_target_encode(
                 X_tr_imp, X_val_imp, y_tr, TARGET_ENCODE_COLS
             )
