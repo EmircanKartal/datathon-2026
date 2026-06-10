@@ -23,16 +23,19 @@
 | 11 | `v11_mentor_interactions` | 2026-06-10 | 42 | 76.8584 | 8.7669 | 78.18 | 79.33 | 77.45 | 89.60 | 0.1 | +Mentor × feature interactions — minimal fark |
 | 12 | `v13_avg_v10v11` | 2026-06-10 | — | — | — | — | — | — | — | — | Ensemble v10+v11 |
 | 13 | `v14_avg_v8v10v11` | 2026-06-10 | — | — | — | — | — | — | — | — | 3-way ensemble |
+| **14** | **`v19_bert_stack`** | **2026-06-10** | **42** | **76.1747** | **8.7278** | 78.18 | 79.33 | 77.45 | 89.60 | 0.1 | **+Fine-tuned BERTurk OOF stack kolonu (BERT solo MSE=130.94, r=0.66, ridge w=0.118) ← YENİ EN İYİ** |
 
 ### Submission Dosyaları
 
+> 2026-06-10: Klasör temizlendi — sadece Kaggle'a gönderilen dosyalar saklanıyor.
+> Politika: her sürümün yalnızca EN İYİ submission'ı saklanır.
+
 | Dosya | OOF MSE | Kaggle'a Gönderildi? | LB Skoru |
 |-------|---------|----------------------|----------|
-| `submission_v1_baseline_77.5957.csv` | 77.5957 | — | — |
-| `submission_v2_seed123_77.6824.csv` | 77.6824 | — | — |
-| `submission_v3_tuned_77.4507.csv` | 77.4507 | — | — |
-| `submission_v4_avg_v1v3.csv` | — (avg) | — | — |
-| `submission_v5_avg_v1v2v3.csv` | — (avg) | — | — |
+| `submission_v3_tuned_77.4507.csv` | 77.4507 | Evet | 87.152262 |
+| `submission_v8_fullfeats_newinteract_77.4560.csv` | 77.4560 | Evet | 87.427112 |
+| `submission_v10_mentor_scores_76.8212.csv` | 76.8212 | Evet | **87.068971** |
+| `submission_v19_bert_stack_76.1747.csv` | **76.1747** | Hayır — **SUBMIT ET** | — |
 
 > Kaggle LB skoru geldiğinde buraya ekle. **Public LB = %60, Private LB = %40.**
 
@@ -151,18 +154,15 @@ Search space:
 
 ### Öncelikli Sonraki Adımlar (etki sırasına göre)
 
-**BUGÜN SUBMIT ET (5 slot):**
-1. `v10_mentor_scores_76.8212.csv` — En iyi model
-2. `v13_avg_v10v11.csv` — Ensemble
-3. `v14_avg_v8v10v11.csv` — 3-way ensemble
-4. `v11_mentor_interactions_76.8584.csv` — LB probe
+**SIRADAKİ SUBMIT:**
+1. `submission_v19_bert_stack_76.1747.csv` — Yeni en iyi OOF (−0.65 vs v10)
 
-**Sonraki Geliştirmeler:**
-- [ ] **Multi-seed ensemble** — v10 ile seed 123, 456, 789 çalıştır
-- [ ] **LGBM/CatBoost Optuna 5-fold** — 3-fold yerine 5-fold tune
+**Sonraki Geliştirmeler (etki sırasına göre):**
+- [ ] **BERT 4-5 epoch + lr decay** — fold 1-2 epoch 3'te hâlâ iyileşiyordu, en ucuz kazanç adayı
+- [ ] **BERT embedding'lerini SVD'ye ver** — fine-tuned encoder'ın CLS embeddingleri frozen mpnet'ten daha bilgili olabilir
+- [ ] **BERT multi-seed (123, 456)** — hem BERT hem GBDT seed ensemble
 - [ ] **Mentor score'ları fold-safe yap** — Şu an global normalization kullanıyor
-- [ ] **MLP ekle** — PyTorch/sklearn MLPRegressor → ensemble çeşitliliği  
-- [ ] **LLM API scoring** — Groq/OpenAI ile gerçek LLM scoring (çok daha güçlü)
+- [ ] **LLM API scoring** — Groq/OpenAI ile gerçek LLM scoring
 - [ ] **Stacking meta LGBM** — Ridge yerine LGBM meta-learner
 
 ### Denendi ve Sonuçları
@@ -170,6 +170,13 @@ Search space:
 |-------|-------|
 | Optuna 50 trial LGBM | OOF MSE 80.68 → 78.64 (+2 iyileşme) |
 | Multi-seed avg (42+123+tuned) | v5 dosyası oluşturuldu, LB sonucu bekleniyor |
+| **BERTurk fine-tune → stack kolonu** | **OOF 76.82 → 76.17 (−0.65, en büyük tek kazanç).** BERT solo MSE=130.94 ama r=0.66 ve GBDT'lerle düşük korelasyonlu → ridge w=0.118. Script: `scripts/finetune_bert.py` (~22 dk MPS) |
+
+### BERT Fine-tune Detayları (v19, 2026-06-10)
+- Model: `dbmdz/bert-base-turkish-cased`, max_len=96, bs=32, lr=2e-5, 3 epoch, fold-içi best-epoch seçimi
+- Aynı KFold split (seed 42) → OOF satırları stack ile hizalı, leakage yok
+- Fold val MSE'leri: 133.8 / 137.1 / 121.7 / 130.0 / 132.1 — fold 1-2'de epoch 3'te hâlâ iyileşiyordu → 4-5 epoch denenebilir
+- Çıktı: `outputs/artifacts/bert_preds_seed42.pkl`, train.py otomatik yükler (`--no-bert` ile kapatılır)
 
 ---
 
@@ -219,7 +226,12 @@ Not: 3-fold tuning → 5-fold OOF daha kötü çıktı (78.89→79.34). 5-fold i
 | Tarih | Submission | OOF MSE | Public LB MSE | Rank | Notlar |
 |-------|-----------|---------|---------------|------|--------|
 | 2026-06-10 | v3_tuned | 77.45 | **87.152262** | 69 | İlk submission |
-| 2026-06-10 | v8_fullfeats_newinteract | 77.46 | **ÖNCELİKLİ GÖNDER** | — | v3+yeni interactions |
-| 2026-06-10 | v9_avg_v3v8 | — | **ÖNCELİKLİ GÖNDER** | — | Ensemble avg v3+v8 |
+| 2026-06-10 | v8_fullfeats_newinteract | 77.46 | **87.427112** | — | OOF v3 ile eşitti ama LB +0.27 kötü → OOF–LB eşleşmesi gürültülü |
+| 2026-06-10 | v10_mentor_scores | 76.82 | **87.068971** | — | **EN İYİ LB** — mentor skorları hem OOF hem LB'yi iyileştirdi, text sinyali gerçek |
+
+### LB Bulguları (2026-06-10)
+1. **v10 en iyi:** OOF −0.63 iyileşme → LB −0.08 iyileşme. Text tabanlı kazançlar LB'ye taşınıyor.
+2. **v8 uyarısı:** OOF eşit (77.45 vs 77.46) ama LB 0.27 daha kötü — küçük OOF farkları LB'de anlam taşımıyor, sadece >0.3 OOF iyileşmelerini submit et.
+3. **Gap stabil ~10.2pt** — üç submission'da da tutarlı, distribution shift değil, irreducible noise + public split varyansı.
 
 > Public LB score'unu öğrenince OOF ile karşılaştır (public-private gap analizi)

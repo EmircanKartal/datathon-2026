@@ -28,6 +28,13 @@ nlp:
   svd_components: 48
   cache_train: "outputs/artifacts/embeddings_train.pkl"
   cache_test: "outputs/artifacts/embeddings_test.pkl"
+  # Fine-tuned BERT regressor on mentor_feedback_text (scripts/finetune_bert.py)
+  bert:
+    model_name: "dbmdz/bert-base-turkish-cased"
+    max_length: 96          # texts are max 59 words — 96 tokens covers everything
+    batch_size: 32
+    epochs: 3
+    learning_rate: 2.0e-5
 
 cross_validation:
   n_splits: 5

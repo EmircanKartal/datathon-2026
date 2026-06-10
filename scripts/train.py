@@ -315,6 +315,21 @@ def main(args):
 
         print()
 
+    # --- Fine-tuned BERT OOF preds as 6th stack model (scripts/finetune_bert.py) ---
+    bert_path = f"outputs/artifacts/bert_preds_seed{random_state}.pkl"
+    if not args.no_bert and os.path.exists(bert_path):
+        import joblib
+        bert = joblib.load(bert_path)
+        if bert["n_splits"] == n_splits and len(bert["oof"]) == len(train_fe):
+            oof["bert"] = bert["oof"]
+            test_preds["bert"] = bert["test"]
+            print(f"\nLoaded fine-tuned BERT preds ({bert['model_name']}) "
+                  f"OOF MSE={bert['oof_mse']:.4f}")
+        else:
+            print(f"\nWARNING: {bert_path} fold/size mismatch — skipping BERT stack column")
+    elif not args.no_bert:
+        print(f"\nNo BERT preds at {bert_path} — run scripts/finetune_bert.py to add them")
+
     # --- OOF summary ---
     print("\n" + "="*60)
     print("OOF Results:")
@@ -399,6 +414,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-tabpfn", action="store_true",
                         help="Skip TabPFN to save API credits during development")
+    parser.add_argument("--no-bert", action="store_true",
+                        help="Skip the fine-tuned BERT stack column")
     parser.add_argument("--tag", default="ensemble", help="Submission tag for filename")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed (overrides config value)")
